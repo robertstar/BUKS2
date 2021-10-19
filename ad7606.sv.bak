@@ -1,0 +1,233 @@
+module ad7606(
+   input        		clk,                  //50mhz
+	input        		rst_n,	
+	input  		      ad_douta,ad_doutb,    
+	input        		ad_busy,            
+   input        		first_data,             
+	output 	[2:0] 	ad_os,              
+	output    		   ad_cs,               
+	output 	reg   	ad_reset,           
+	output	reg    	ad_convstab,        //convert start
+	output          	ad_rd_sck,
+	output  	[15:0]	ad_ch1,             
+	output  	[15:0] 	ad_ch2,              
+	output  	[15:0] 	ad_ch3,           
+	output  	[15:0] 	ad_ch4,             
+	output  	[15:0] 	ad_ch5,              
+	output  	[15:0] 	ad_ch6,             
+	output  	[15:0] 	ad_ch7,             
+	output  	[15:0] 	ad_ch8               
+);
+
+
+parameter 	IDLE=4'd0;
+parameter 	AD_CONV=4'd1;
+parameter 	Wait_1=4'd2;
+parameter 	Wait_busy=4'd3;
+parameter 	READ_CH1=4'd4;
+parameter 	READ_CH2=4'd5;
+parameter 	READ_CH3=4'd6;
+parameter 	READ_CH4=4'd7;
+parameter 	READ_DONE=4'd12;
+
+
+
+reg [15:0]  cnt;
+reg [5:0] 	i;
+reg [3:0] 	state;
+reg [8:0]   acq_cnt;
+reg        	cnv_start_reg1,
+				cnv_start_reg2,
+				ad_cs_n_reg,
+				mclk;
+
+
+reg[15:0]   ch1_data_reg,
+            ch2_data_reg,
+				ch3_data_reg,
+				ch4_data_reg,
+				ch5_data_reg,
+				ch6_data_reg,
+				ch7_data_reg,
+				ch8_data_reg,
+				ch1,
+				ch2,
+				ch3,
+				ch4,
+				ch5,
+				ch6,
+				ch7,
+				ch8;
+		
+
+
+
+ assign      ad_os=3'b000;
+ assign      ad_ch2=ch2;
+ assign      ad_ch1=ch1;
+ assign      ad_ch3=ch3;
+ assign      ad_ch4=ch4;
+ assign      ad_ch5=ch5;	
+ assign      ad_ch6=ch6;
+ assign      ad_ch7=ch7;
+ assign      ad_ch8=ch8;
+ assign      ad_cs=ad_cs_n_reg;
+ assign      ad_rd_sck=mclk;
+
+
+always@(posedge clk)
+ begin
+    if(cnt<16'hffff) begin
+        cnt<=cnt+1;
+        ad_reset<=1'b1;
+      end
+      else
+        ad_reset<=1'b0;       
+   end
+
+always @(posedge clk or negedge rst_n or posedge ad_reset) 
+ begin
+	 if (ad_reset || !rst_n) begin 
+			 state<=IDLE; 
+
+			 ad_cs_n_reg<=1'b1;
+			 mclk<=1'b1; 
+			 ad_convstab<=1'b1;
+			 i<=0;
+			 acq_cnt<=9'd2;
+	 end		 
+	 else begin
+		  case(state)
+		  IDLE: begin
+				 ad_cs_n_reg<=1'b1;
+				 mclk<=1'b1; 
+				 ad_convstab<=1'b1; 
+				 acq_cnt<=9'd2;
+				 if(i==20) begin
+					 i<=0;			 
+					 state<=AD_CONV;
+				 end
+				 else 
+					 i<=i+1'b1;
+		  end
+		  AD_CONV: begin	   
+				 if(i==2) begin                        //等待2个clock
+					 i<=0;			 
+					 state<=Wait_1;
+					 ad_convstab<=1'b1;       				 
+				 end
+				 else begin
+					 i<=i+1'b1;
+					 ad_convstab<=1'b0;                     //启动AD转换
+				 end
+		  end
+		  Wait_1: begin            
+				 if(i==5) begin                           //等待5个clock, 等待busy信号为高
+					 i<=0;
+					 state<=Wait_busy;
+				 end
+				 else 
+					 i<=i+1'b1;
+		  end		 
+		  Wait_busy: begin            
+				 if(ad_busy==1'b0) begin                    //等待busy信号为低
+					 i<=0;			 
+					 state<=READ_CH1;
+				 end
+		  end
+		  READ_CH1: begin 
+				 ad_cs_n_reg<=1'b0;                              //cs信号有效	  
+				 if(i==3) begin
+					 mclk<=1'b1;
+					 i<=0;	
+	             if((acq_cnt>9'd1)&(acq_cnt<=9'd17))	
+		            begin			 
+					    ch1_data_reg={ch1_data_reg[14:0],ad_douta};              //读CH1和CH5
+                   ch5_data_reg={ch5_data_reg[14:0],ad_doutb};
+                   acq_cnt<=acq_cnt+1;
+						 if (acq_cnt==9'd17)   state<=READ_CH2;
+					   end
+                 else   state<=IDLE;				 
+				 end
+				 else begin
+					 mclk<=1'b0;	
+					 i<=i+1'b1;
+				 end
+		  end
+		  READ_CH2: begin                                               //读取CH2和CH6
+				 if(i==3) begin
+					 mclk<=1'b1;
+					 i<=0;
+                 if((acq_cnt>9'd17)&(acq_cnt<=9'd33))
+                  begin
+                  ch2_data_reg={ch2_data_reg[14:0],ad_douta};
+                  ch6_data_reg={ch6_data_reg[14:0],ad_doutb};                              
+                  acq_cnt<=acq_cnt+1;
+						if (acq_cnt==9'd33)   state<=READ_CH3;
+					   end
+                 else   state<=IDLE;			 
+				 end
+				 else begin
+					 mclk<=1'b0;	
+					 i<=i+1'b1;
+				 end
+		  end
+		  READ_CH3: begin                                                 //读取CH3和CH7
+				 if(i==3) begin
+					 mclk<=1'b1;                                                       
+					 i<=0;
+                 if((acq_cnt>9'd33)&(acq_cnt<=9'd49))
+                  begin
+                  ch3_data_reg={ch3_data_reg[14:0],ad_douta}; 
+                  ch7_data_reg={ch7_data_reg[14:0],ad_doutb};                      
+					   acq_cnt<=acq_cnt+1;
+						if (acq_cnt==9'd49)     state<=READ_CH4;
+					   end
+                 else   state<=IDLE;					 
+				 end
+				 else begin
+					 mclk<=1'b0;	
+					 i<=i+1'b1;
+				 end
+		  end
+		  READ_CH4: begin                                                    //读取CH4和CH8
+				 if(i==3) begin
+					 mclk<=1'b1;
+					 i<=0;
+                 if((acq_cnt>9'd49)&(acq_cnt<=9'd65))
+                  begin
+                  ch4_data_reg={ch4_data_reg[14:0],ad_douta};
+                  ch8_data_reg={ch8_data_reg[14:0],ad_doutb};                        
+					   acq_cnt<=acq_cnt+1;
+						if (acq_cnt==9'd65)     state<=READ_DONE;
+					   end
+                  else   state<=IDLE;				 
+				 end
+				 else begin
+					 mclk<=1'b0;	
+					 i<=i+1'b1;
+				 end
+		  end
+
+		  READ_DONE:begin                                                    // 寄存器输出，返回重新采样                                                
+		          ch1<=ch1_data_reg; 
+		          ch2<=ch2_data_reg; 
+					 ch3<=ch3_data_reg; 
+					 ch4<=ch4_data_reg; 
+					 ch5<=ch5_data_reg; 
+					 ch6<=ch6_data_reg; 
+					 ch7<=ch7_data_reg; 
+					 ch8<=ch8_data_reg; 
+					 mclk<=1'b1;	 
+					 ad_cs_n_reg<=1'b1;
+					 acq_cnt<=9'd2;
+					 state<=IDLE;
+		  end		
+		  default:	state<=IDLE;
+		  endcase	
+    end	  
+				 
+ end
+
+endmodule
+

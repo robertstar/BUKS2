@@ -1,0 +1,5 @@
+module pulse(
+					input 		clk,	//25Mhz
+					input 		fd,   //5kHz
+					output reg 	out
+);

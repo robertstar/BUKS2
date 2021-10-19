@@ -1,0 +1,8 @@
+module events
+(
+	input 		clk,
+	input 		rst,
+	input 		rd,
+	input 		wr,
+	output reg	dout,
+);
